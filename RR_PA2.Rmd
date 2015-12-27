@@ -1,0 +1,160 @@
+---
+title: "Measuring Impact of Severe Weather on Human and Property Losses in the U.S."
+output: 
+  html_document:
+    keep_md: yes
+---
+
+##Synopsis
+
+Severe weather events such as precipitation extremes and severe storms cause hundreds of deaths and injuries annually in the United States, as well as heavy losses due to property and crop damage. In this report, we analyzed the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database to answer two basic questions:
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+According to the [National Weather Service Instruction 10-1605](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf), there are 48 distinct event types. However, the actual [storm data file](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) contains over 985 event types. As part of the analysis, an attempt was performed to map the actual values to the canonical ones using regular expressions. Values that failed to be matched to any event type were lumped together as 'Other.' Data was then summarized by summing over the collection grouped by event type.
+
+##Data Processing
+
+Before starting the analysis, we first need to load libraries 'dplyr' which we use data manipulation and 'ggplot2' which we use for plotting results.
+
+```{r prepare.environment, message = FALSE}
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(ggplot2))
+```
+
+Also, we define a few utility functions that are used throughout the analysis to abstract simple concepts and hopefully make the main analysis more clear.
+
+```{r define.functions, cache=TRUE}
+#Map abbreviations (H->Hecto, K->Kilo, etc.) to the corresponding 
+#power of ten (H->100->10^2, K->1000->10^3, etc.)
+calc.exp <- function(col.exp) {
+    col.exp = ifelse(col.exp == "H", "2", col.exp)
+    col.exp = ifelse(col.exp == "K", "3", col.exp)
+    col.exp = ifelse(col.exp == "M", "6", col.exp)
+    col.exp = ifelse(col.exp == "B", "9", col.exp)
+    col.exp = ifelse(col.exp == "",  "0", col.exp)
+    return(as.integer(col.exp))
+}
+
+#Calculate property or crop damage based off magnitude and exponent
+calc.dmg <- function(col.mag, col.exp) {
+    return(col.mag * (10 ^ calc.exp(col.exp)))
+}
+
+#Convert a factor to string and trim white space
+str.trim <- function(col) {
+    return(trimws(as.character(col)))
+}
+```
+
+Next, we need to define a few constants designing the locations where the raw data used in this effort can be found.
+Data is then downloaded, unzipped if needed, and loaded in memory. The existence tests surrounding each of these actions implement a crude but effective caching strategy.
+
+```{r get.data, cache=TRUE}
+data.url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+data.bz2 <- "StormData.csv.bz2"
+data.csv <- "StormData.csv"
+evnt.csv <- "events.csv"
+
+if (!file.exists(data.bz2)) {
+    download.file(data.url, data.bz2)
+}
+
+if (!file.exists(data.csv)) {
+    bunzip2(data.bz2)
+}
+
+if (!exists("raw.df")) {
+    raw.df <- read.csv(data.csv)
+}
+
+if (!exists("evt.df")) {
+    evt.df <- read.csv(evnt.csv, stringsAsFactors = FALSE)
+}
+```
+
+Raw data is filtered to remove items irrelevant to our analysis, i.e., rows not containing at least one of the columns of interest (property/crop damage or fatalities/injuries), or containing extraneous values which would compromise the calculation of property/crop damage. We also throw away columns that are not used in the analysis. We then perform some basic cleaning of the data by trimming leading and trailing whitespace, while normalizing in-between whitespace to a single character. Next, we map the event types to one of the 48 canonical classes, lumping those that fail classification as 'Other.' Finally, we obtain our clean data frame containing just the event types, casualties (fatalities + injuries), and damages (property + crop losses)
+
+```{r clean.data, cache=TRUE}
+wrk.df <-
+    raw.df %>%
+    filter(PROPDMG != 0 | CROPDMG != 0 | FATALITIES != 0 | INJURIES != 0) %>%
+    filter(PROPDMGEXP != "+" & PROPDMGEXP != "-" & PROPDMGEXP != "?") %>%
+    filter(CROPDMGEXP != "+" & CROPDMGEXP != "-" & CROPDMGEXP != "?") %>%
+    select(EVTYPE, FATALITIES, INJURIES, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP) %>%
+    mutate(XEVTYPE = toupper(trimws(gsub( " +", " ", as.character(EVTYPE) )))) %>%
+    mutate(XPROPDMGEXP = ifelse(str.trim(PROPDMGEXP) == "", "0", toupper(str.trim(PROPDMGEXP)))) %>%
+    mutate(XCROPDMGEXP = ifelse(str.trim(CROPDMGEXP) == "", "0", toupper(str.trim(CROPDMGEXP))))
+
+for (i in 1:nrow(evt.df)) {
+    wrk.df$XEVTYPE[grep(evt.df[i,]$regex, wrk.df$XEVTYPE)] <- evt.df[i,]$class
+}
+wrk.df$XEVTYPE[grep("[a-z]", wrk.df$XEVTYPE, invert = TRUE)] <- "Other"
+
+cln.df <- 
+    with(wrk.df, {
+        wrk.df %>%
+        transmute(EVTYPE = as.factor(XEVTYPE)) %>%
+        transform(CASUALTIES = FATALITIES + INJURIES) %>%
+        transform(DAMAGE = calc.dmg(PROPDMG, XPROPDMGEXP) +  calc.dmg(CROPDMG, XCROPDMGEXP))
+    })
+```
+
+Having obtained clean data, we now obtain the top five event types contributing to human losses. We then repeat the process to find the top five event types contributing to economic losses.
+
+```{r top.five, cache=TRUE}
+top.health.df <- 
+    cln.df %>%
+    group_by(EVTYPE) %>%
+    summarize(TOTAL_CASUALTIES = sum(CASUALTIES)) %>%
+    arrange(desc(TOTAL_CASUALTIES))
+
+top.health.df$EVTYPE <- 
+    factor(
+        top.health.df$EVTYPE, 
+        levels = top.health.df$EVTYPE[order(top.health.df$TOTAL_CASUALTIES, decreasing = TRUE)]
+    )
+
+top.damage.df <- 
+    cln.df %>%
+    group_by(EVTYPE) %>%
+    summarize(TOTAL_DAMAGE = sum(DAMAGE)) %>%
+    arrange(desc(TOTAL_DAMAGE))
+
+top.damage.df$EVTYPE <- 
+    factor(
+        top.damage.df$EVTYPE, 
+        levels = top.damage.df$EVTYPE[order(top.damage.df$TOTAL_DAMAGE,  decreasing = TRUE)]
+    )
+```
+
+##Results
+
+The analysis revealed that tornadoes are the most impactful weather event with respect to population health, accounting for 62.30% of casualties (injuries + fatalities), followed distantly by thunderstom winds, excessive heat, flood, lightning, heat and flash flood.
+
+```{r dsp.health.plot}
+health.plot <-
+    ggplot(data = top.health.df[1:5,], aes(x = EVTYPE, y = TOTAL_CASUALTIES)) +
+    geom_bar(stat = "identity") +
+    xlab("Event Class") +
+    ylab("Health Damage (Fatalities + Injuries)") +
+    ggtitle("Top Five Severe Weather Events Contributing to Human Losses in the U.S., 1950-2011") +
+    theme(plot.title=element_text(size = 11))
+
+print(health.plot)
+```
+
+When it comes to economic losses, the most impactful weather event is flood, which accounts for about 33.75% of total losses (property + crop damage), followed somewhat closely by hurricanes, tornadoes, storm tides, hail, flash flood and drought.
+
+```{r dsp.damage.plot, cache=TRUE}
+damage.plot <-
+    ggplot(data = top.damage.df[1:5,], aes(x = EVTYPE, y = TOTAL_DAMAGE / 1000000)) +
+    geom_bar(stat = "identity") +
+    xlab("Event Class") +
+    ylab("Economic Damage (in million $)") + 
+    ggtitle("Top Five Severe Weather Events Contributing to Economic Losses in the U.S., 1950-2011") +
+    theme(plot.title=element_text(size = 11))
+
+print(damage.plot)
+```
