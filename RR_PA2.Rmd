@@ -12,11 +12,11 @@ Severe weather events such as precipitation extremes and severe storms cause hun
 1. Across the United States, which types of events are most harmful with respect to population health?
 2. Across the United States, which types of events have the greatest economic consequences?
 
-According to the [National Weather Service Instruction 10-1605](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf), there are 48 distinct event types. However, the actual [storm data file](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) contains over 985 event types. As part of the analysis, an attempt was performed to map the actual values to the canonical ones using regular expressions. Values that failed to be matched to any event type were lumped together as 'Other.' Data was then summarized by summing over the collection grouped by event type.
+According to the [National Weather Service Instruction 10-1605](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf), there are 48 distinct event types. However, the actual [storm data file](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2) contains over 985 event types. As part of the analysis, an attempt was performed to map the actual values to the canonical ones using regular expressions. The file containing this mapping is available on GitHub  [link: events.csv](https://github.com/mjpalacios/ReproducibleResearch_PA2/blob/master/events.csv). Values that failed to be matched to any event type were lumped together as 'Other.' Data was then summarized by summing over the collection grouped by event type.
 
 ##Data Processing
 
-Before starting the analysis, we first need to load libraries 'dplyr' which we use data manipulation and 'ggplot2' which we use for plotting results.
+Before starting the analysis, we first need to load libraries 'dplyr' which we use for data manipulation and 'ggplot2' which we use for plotting results.
 
 ```{r prepare.environment, message = FALSE}
 suppressPackageStartupMessages(library(dplyr))
@@ -131,7 +131,7 @@ top.damage.df$EVTYPE <-
 
 ##Results
 
-The analysis revealed that tornadoes are the most impactful weather event with respect to population health, accounting for 62.30% of casualties (injuries + fatalities), followed distantly by thunderstom winds, excessive heat, flood, lightning, heat and flash flood.
+The analysis revealed that tornadoes are the most impactful weather event with respect to population health, accounting for 62.30% of casualties (injuries + fatalities), followed distantly by thunderstom winds, excessive heat, flood, and lightning.
 
 ```{r dsp.health.plot}
 health.plot <-
@@ -140,12 +140,13 @@ health.plot <-
     xlab("Event Class") +
     ylab("Health Damage (Fatalities + Injuries)") +
     ggtitle("Top Five Severe Weather Events Contributing to Human Losses in the U.S., 1950-2011") +
-    theme(plot.title=element_text(size = 11))
+    theme(plot.title=element_text(size = 10, face = "bold")) +
+    theme(axis.title=element_text(size = 10, face = "bold")) 
 
 print(health.plot)
 ```
 
-When it comes to economic losses, the most impactful weather event is flood, which accounts for about 33.75% of total losses (property + crop damage), followed somewhat closely by hurricanes, tornadoes, storm tides, hail, flash flood and drought.
+When it comes to economic losses, the most impactful weather event is flood, which accounts for about 33.75% of total losses (property + crop damage), followed somewhat closely by hurricanes, tornadoes, storm tides, and hail.
 
 ```{r dsp.damage.plot, cache=TRUE}
 damage.plot <-
@@ -154,7 +155,8 @@ damage.plot <-
     xlab("Event Class") +
     ylab("Economic Damage (in million $)") + 
     ggtitle("Top Five Severe Weather Events Contributing to Economic Losses in the U.S., 1950-2011") +
-    theme(plot.title=element_text(size = 11))
+    theme(plot.title=element_text(size = 10, face = "bold")) + 
+    theme(axis.title=element_text(size = 10, face = "bold")) 
 
 print(damage.plot)
 ```
